@@ -1,0 +1,238 @@
+---
+title: "Multinomial Logistic Regression - Code Demo v4"
+author: "Kayla"
+output: html_notebook
+---
+
+The data set used in this demo was taken from https://archive.ics.uci.edu/ml/datasets/adult. Originally designed to solve a regular logistic regression problem, it was cleaned and modified in a separate process to reflect the variables of interest in this multiclass classification context. The data is described by the following attributes:
+
+age - continuous
+workclass - Government, Selfemployed, Private, Unemployed
+education - Bachelors, HSgrad, SomeHS, Associates, LessHS, Professional, Masters, Doctorate
+race - White, Black, Other, AsianPacIslander, AmerIndianEskimo
+sex - Male, Female
+maritalstatus - Single, Married, Divorced, Separated
+
+Transformations from the original data include removing '-', whitespaces, missing data, filtering for respondents only from the United States, and dropping columns that are not relevant to this particular question.
+
+In this demo, we want to know how each of these 5 factors (age, workclass, education, race, and sex) affect maritalstatus. In other words, we want to know how each of these categories affect the likelihood of a given person to be:
+- Single/Married
+- Divorced/Married
+- or Seperated/Married
+
+To solve this question, we first need to load in the necessary packages:
+```{r}
+# Loading necessary packages
+
+library(ggplot2) #probably
+library(nnet)
+library(caret)
+library(car)
+
+```
+
+Read in the cleaned and transformed data set (preprocessing completed prior to this demo):
+```{r}
+# reading in adult data 
+
+adults.data <- read.csv("adultdata-clean.csv", header = TRUE, sep = ",") 
+
+```
+
+Set the variables to their appropriate types:
+```{r}
+# Setting categories to their appropriate types
+
+adults.data$workclass <- as.factor(adults.data$workclass) 
+adults.data$education <- as.factor(adults.data$education) 
+adults.data$race <- as.factor(adults.data$race) 
+adults.data$sex <- as.factor(adults.data$sex) 
+adults.data$maritalstatus <- as.factor(adults.data$maritalstatus) 
+
+str(adults.data)
+
+
+```
+Assessing the data for outliers:  
+
+```{r}
+# Checking for outliers
+
+ggplot(adults.data, aes(x = age, y = maritalstatus)) + 
+  geom_boxplot() + 
+  ggtitle("Boxplot of Marital Status by Age") +
+  xlab("Age") +
+  ylab("Marital Status")
+
+boxplot(adults.data$maritalstatus ~ adults.data$education)
+
+boxplot(adults.data$maritalstatus ~ adults.data$race)
+
+boxplot(adults.data$maritalstatus ~ adults.data$sex)
+
+boxplot(adults.data$maritalstatus ~ adults.data$workclass)
+
+```
+It looks like our data has some columns which are inconsistent from others. For example, out of the population as a whole, it is probably less likely for someone to hold a doctorate or professional degree, and also less likely for someone to be considered self-employed. Thus we have fewer observations for these categories, resulting in the spread we see above.
+
+We'll first test the model on two categories, workclass and age. This is to demonstrate how the model works and interpretation of the results.
+
+Multinomial logistic regression works by setting a *reference group* before fitting the model. In other words, we need to set a baseline for R to compare all other categories to. Here, we set the reference group is set to 2 (Married), but the model can work with any of the 4 categories in maritalstatus. This means that for the results below, we will be looking at the probability of being divorced in comparison to being married, the probability of being separated in comparison to being married, and the probability of being single in comparison to being married.
+
+```{r}
+
+# Set the reference group. In this case it is 2 - Married, but can be any
+
+adults.data$maritalstatus <- relevel(adults.data$maritalstatus, ref=2)
+
+# Running the multinom regression test on select categories 
+
+model <- multinom(maritalstatus ~ workclass + age, data=adults.data)
+summary(model)
+
+```
+Reading the output:
+
+Note how we are missing the government category when looking at these coefficients. This is because in this interpretation, the class 'government' under workclass is being used as the reference category. Again, we can set it to any category we want, but R typically chooses the first one. Thus we have the following interpretations:
+
+The log odds of being divorced over married will decrease by 0.06 when moving from government to the private sector.
+The log odds of being divorced over married will decrease by 0.84 when moving from government to self employed.
+The log odds of being divorced over married will decrease by 1.19 when moving from government to unemployed.
+The log odds of being divorced over married will increase by 0.003 with every 1 unit increase in age.
+
+The log odds of being separated over married will increase by 0.07 when moving from government to the private sector.
+The log odds of being separated over married will decrease by 0.73 when moving from government to self employed.
+The log odds of being separated over married will decrease by 6.8 when moving from government to unemployed.
+The log odds of being separated over married will decrease by 0.02 with every 1 unit increase in age.
+
+The log odds of being single over married will decrease by 0.026 when moving from government to the private sector.
+The log odds of being single over married will decrease by 0.74 when moving from government to self employed.
+The log odds of being single over married will increase by 0.17 when moving from government to unemployed.
+The log odds of being single over married will decrease by 0.09 with every 1 unit increase in age.
+
+Now, let's have a look at the full model, with all predictors of interest included:
+
+```{r}
+# testing the full model without interactions
+
+full.model <- multinom(maritalstatus ~ workclass + education + race + sex + age, data=adults.data)
+summary(full.model)
+
+```
+
+The results look slightly different in this model. Here we have:
+
+The log odds of divorced/married increase by 0.005 from government to private
+The log odds of divorced/married decrease by 0.034 from government to self employed
+The log odds of divorced/married decrease by 1.8 from government to unemployed...
+
+Again, for each level of the predictors, we have 1 reference group that isn't included in the coefficients. In this model, we have the reference groups:
+
+workclass - Government
+education - Associates
+race - AmericanIndianEskimo
+sex - Female
+
+Note that our Residual Deviance and AIC metrics appear smaller in this model, which makes this full version a slightly better model for overall interpretation of the results. Again, we can use relevel to use different reference groups, but typically R chooses the first one, which is currently the case. 
+
+Let's review the model diagnostics:
+
+We can take a cursory look at the actual vs. predicted values below:
+
+```{r}
+# outcomes for the first 6 rows our model predicted
+head(pp <- fitted(full.model))
+
+# the actual outcomes from the original data set
+head(adults.data)
+
+```
+
+Obviously, our model shows a few differences, so let's take a closer look.
+
+To diagnose the performance of the multinomial logistic regression model on the given data set, we can use various metrics and techniques. Here are some steps to evaluate the model:
+
+Confusion matrix: We can create a confusion matrix to see how well the model is predicting the correct categories. The confusion matrix will show the number of correct and incorrect predictions for each category.
+The confusion matrix can help us identify the number of false positives and false negatives for each category and the overall accuracy of the model.
+
+Accuracy: We can calculate the accuracy of the model, which is the proportion of correct predictions to the total number of predictions made.
+
+```{r}
+# section for reviewing model diagnostics - how well did our model do?
+
+# Predicting the model on the test dataset
+predictions <- predict(full.model, adults.data, type = "class")
+
+# Creating a confusion matrix
+confusion_matrix <- confusionMatrix(predictions, adults.data$maritalstatus)
+print(confusion_matrix)
+
+# Calculating the accuracy of the model
+# accuracy <- sum(diag(confusion_matrix))/sum(confusion_matrix)
+# print(paste0("Accuracy: ", round(accuracy, 2)))
+
+```
+Overall, we can see from the confusion matrix that this model does a fairly good job with predicting the likelihood of married over other categories. 
+
+For fun, let's see what the model thinks of a person who is 30 years of age, works for the private sector, has a bachelor's degree, is white and female:
+
+```{r}
+# section for using predict() to predict a random person 
+
+test.person <- data.frame(workclass = "Private", 
+                          education = "Bachelors", 
+                          race = "White", 
+                          sex = "Female",
+                          age = 30)
+                            
+predict(full.model, newdata = test.person, "probs")
+
+```
+
+Our demo model shows that for a person who is 30 years old, works for the private sector, has a bachelor's degree, and is white and female, the log likelihood of being single ranks the highest, followed by separated, divorced, then married.
+
+Assumptions check:
+
+As a final sanity check we will plot the residuals of the full model. This indicates whether the observations satisfy the linearity assumption. These results let us know that we might need to consider that our data has a nonlinear relationship between the predictor variable and response variable. 
+
+```{r}
+# Testing for linearity
+
+plot(full.model$fitted.values, resid(full.model), xlab = "Fitted Values", ylab = "Residuals", main = "Residuals Plot")
+abline(h = 0, lty = 2, col = "red")  # Add a horizontal reference line at y = 0
+
+```
+Unfortunately, due to the nature of classification modeling, the plotted fitted vs. residuals do not tell us much about the fitted data. Instead, we can look at the binned residuals (from the arm package).
+
+Like in linear regression, the residuals are be defined as observed minus expected values, but because of the discrete nature of logistic regression, (values are 1 or 0, etc), plots of raw residuals from logistic regression are generally not useful. The binned residuals plot divides the data into categories (bins) based on their fitted values, and takes the average residual versus the average fitted value for each bin.
+
+```{r}
+library(arm)
+
+binnedplot(fitted(full.model), 
+           residuals(full.model, type = "response"), 
+           nclass = NULL, 
+           xlab = "Expected Values", 
+           ylab = "Average residual", 
+           main = "Binned residual plot", 
+           cex.pts = 0.8, 
+           col.pts = 1, 
+           col.int = "gray")
+
+```
+
+The grey lines represent 2 Standard error bands, which should contain about 95% of the observations. We can conclude from this visual that our demo model reasonably captures most of the observations, though it can be somewhat hard to judge whether or not a pattern appears in the plot. Generally speaking, however, it would appear that our model satisfies the condition of linearity.
+
+Multicollinearity: Multinomial logistic regression assumes that there is no multicollinearity between the predictor variables. We can check for multicollinearity by calculating the variance inflation factor (VIF) for each predictor variable. A VIF greater than 5 indicates high multicollinearity.
+
+We can test this by is building a generalized linear model with the glm() function, then use the vif() function from the car package. The vif() function determines the variance inflation factor for all of the predictor variables. If we have VIF values of 5 or more, that indicates that we have highly correlated predictor variables. 
+
+```{r}
+
+# Checking for multicollinearity
+
+vif.test.model <- glm(maritalstatus ~ age + workclass + education + race + sex, data = adults.data, family = binomial())
+vif(vif.test.model)
+
+```
+This output of the VIF (or GVIF in this case) values shows that our variables are not highly correlated. From the output, it appears that we have no major multicollinearity problems.
