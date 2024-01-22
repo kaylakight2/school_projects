@@ -1,6 +1,6 @@
 ---
 title: "Multinomial Logistic Regression - Code Demo v4"
-author: "Katie, Kayla, Mohammed"
+author: "Kayla"
 output: html_notebook
 ---
 
